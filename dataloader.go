@@ -66,43 +66,37 @@ func connect(config cfg) (immudb.ImmuClient, context.Context) {
 	}
 	return client, ctx
 }
+
+const (
+	isString = iota
+	isInt
+	isTimestamp
+)
+
 type t_metadata struct {
 	create string
-	intcast []int // position of field to cast to integers
-	tstamp []int  // position of field to cast to timestamp
+	cast map[int]int // position of field to cast to integers
 }
 
 var metadata = map[string]t_metadata{
 	"circuits": t_metadata{
 		create: "CREATE TABLE circuits(circuitId INTEGER, circuitRef VARCHAR, name VARCHAR, location VARCHAR, country VARCHAR, lat INTEGER, lng INTEGER ,alt INTEGER ,url VARCHAR, PRIMARY KEY circuitId);",
-		intcast: []int{0, 5, 6, 7},
+		cast: map[int]int{0:isInt, 5:isInt, 6:isInt, 7:isInt},
 	},
 	"drivers":  t_metadata{
 		create: "CREATE TABLE drivers(driverId INTEGER, driverRef VARCHAR,number INTEGER, code VARCHAR[3], forename 	VARCHAR, surname VARCHAR, dob VARCHAR ,nationality VARCHAR, url VARCHAR, PRIMARY KEY driverId);",
-		intcast: []int{0, 2},
+		cast: map[int]int{0:isInt, 2:isInt},
 	},
 	"constructors": t_metadata{
 		create: "CREATE TABLE constructors(constructorId INTEGER, constructorRef VARCHAR, name VARCHAR,nationality VARCHAR,url VARCHAR, PRIMARY KEY constructorId);",
-		intcast: []int{0},
+		cast: map[int]int{0:isInt},
 	},
 	"races":  t_metadata{
-		create: "CREATE TABLE races(raceId INTEGER, year INTEGER, round INTEGER, circuitId INTEGER, name VARCHAR, date VARCHAR, time VARCHAR, url VARCHAR, PRIMARY KEY raceId)",
-		intcast: []int{0, 1, 2, 3},
+		create: "CREATE TABLE races(raceId INTEGER, year INTEGER, round INTEGER, circuitId INTEGER, name VARCHAR, datetime TIMESTAMP, url VARCHAR, PRIMARY KEY raceId)",
+		cast: map[int]int{0:isInt, 1:isInt, 2:isInt, 3:isInt, 5:isTimestamp},
 	},
 }
 
-var create_stmt = map[string]string{
-	"circuits": "CREATE TABLE circuits(circuitId INTEGER, circuitRef VARCHAR, name VARCHAR, location VARCHAR, country VARCHAR, lat INTEGER, lng INTEGER ,alt INTEGER ,url VARCHAR, PRIMARY KEY circuitId);",
-	"drivers": "CREATE TABLE drivers(driverId INTEGER, driverRef VARCHAR,number INTEGER, code VARCHAR[3], forename VARCHAR, surname VARCHAR, dob VARCHAR ,nationality VARCHAR, url VARCHAR, PRIMARY KEY driverId);",
-	"constructors": "CREATE TABLE constructors(constructorId INTEGER, constructorRef VARCHAR, name VARCHAR,nationality VARCHAR,url VARCHAR, PRIMARY KEY constructorId);",
-	"races": "CREATE TABLE races(raceId INTEGER, year INTEGER, round INTEGER, circuitId INTEGER, name VARCHAR, date VARCHAR, time VARCHAR, url VARCHAR, PRIMARY KEY raceId)",
-}
-var intvalues = map[string][]int {
-	"circuits": []int{0, 5, 6, 7},
-	"drivers": []int{0, 2},
-	"constructors": []int{0},
-	"races": []int{0, 1, 2, 3},
-}
 
 func str_clean(s string) string {
 	s1 := strings.ToValidUTF8(s,string([]rune{unicode.ReplacementChar}))
@@ -113,16 +107,16 @@ func str_clean(s string) string {
 
 func valstring(name string, record []string) string {
 	var t []string
-	cvt := intvalues[name]
+	mdata:=metadata[name]
 	for i,field := range record {
-		to_int := false
-		for _,v := range cvt {
-			if i==v {
-				to_int = true
-				break
-			}
+		castType, ok := mdata.cast[i]
+		if !ok {
+			castType=isString
 		}
-		if to_int {
+		switch castType {
+			case isString:
+				t = append(t, fmt.Sprintf("'%s'",str_clean(field)))
+			case isInt:
 			ii := 0.0
 			if field != "" {
 				var err error
@@ -132,8 +126,8 @@ func valstring(name string, record []string) string {
 				}
 			}
 			t = append(t, strconv.Itoa(int(ii)))
-		} else {
-			t = append(t, fmt.Sprintf("'%s'",str_clean(field)))
+			case isTimestamp:
+				t = append(t, fmt.Sprintf("CAST('%s' AS TIMESTAMP)",field))
 		}
 	}
 	return strings.Join(t,",")
@@ -156,7 +150,7 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 	if err != nil {
 		log.Fatalf("Load Table %s. Error while creating transaction: %s", name, err)
 	}
-	err = tx.SQLExec(ctx, create_stmt[name], nil)
+	err = tx.SQLExec(ctx, metadata[name].create, nil)
 	if err != nil {
 		log.Fatalf("Load Table %s. Error while creating table: %s", name, err)
 	}
@@ -184,8 +178,8 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	c := parseConfig()
 	ic, ctx := connect(c)
-	//load_table(ic, ctx, "circuits")
-	//load_table(ic, ctx, "drivers")
-	//load_table(ic, ctx, "constructors")
+	load_table(ic, ctx, "circuits")
+	load_table(ic, ctx, "drivers")
+	load_table(ic, ctx, "constructors")
 	load_table(ic, ctx, "races")
 }
