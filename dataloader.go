@@ -68,8 +68,8 @@ func connect(config cfg) (immudb.ImmuClient, context.Context) {
 }
 type t_metadata struct {
 	create string
-	intcast []int
-	merge2date [][2]int
+	intcast []int // position of field to cast to integers
+	tstamp []int  // position of field to cast to timestamp
 }
 
 var metadata = map[string]t_metadata{
@@ -88,7 +88,6 @@ var metadata = map[string]t_metadata{
 	"races":  t_metadata{
 		create: "CREATE TABLE races(raceId INTEGER, year INTEGER, round INTEGER, circuitId INTEGER, name VARCHAR, date VARCHAR, time VARCHAR, url VARCHAR, PRIMARY KEY raceId)",
 		intcast: []int{0, 1, 2, 3},
-		merge2date: [][2]int{{5,6}},
 	},
 }
 
