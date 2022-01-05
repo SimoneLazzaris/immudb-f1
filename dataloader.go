@@ -189,8 +189,15 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 	if err != nil {
 		log.Fatalf("Load Table %s. Error while creating table: %s", name, err)
 	}
+
 	tx_count :=1 // the create table is a valid instruction
-	for {
+
+        if name == "results" {
+	   tx.SQLExec(ctx, "CREATE INDEX ON results(driverId);CREATE INDEX ON results(statusId);", nil)
+           tx_count++
+        }
+
+        for {
 		record, err := r.Read()
 		if err == io.EOF {
 			break
@@ -207,7 +214,7 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 		}
 		
 		tx_count = tx_count+1
-		if tx_count>512 {
+		if tx_count>256 {
 			_, err = tx.Commit(ctx)
 			if err != nil {
 				log.Fatalln(err)
