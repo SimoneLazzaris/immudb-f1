@@ -55,11 +55,16 @@ func parseConfig() (c cfg) {
 
 func connect(config cfg) (immudb.ImmuClient, context.Context) {
 	ctx := context.Background()
+        opts := immudb.DefaultOptions().WithAddress(config.IpAddr).WithPort(config.Port)
 
 	var client immudb.ImmuClient
 	var err error
 
-	client = immudb.NewClient()
+	client, err = immudb.NewImmuClient(opts)
+	if err != nil {
+                log.Printf("Failed to connect. Reason: %s", err.Error())
+                return client,ctx
+	}
 	err = client.OpenSession(ctx, []byte(config.Username), []byte(config.Password), config.DBName)
 	if err != nil {
 		log.Fatalln("Failed to connect. Reason:", err)
