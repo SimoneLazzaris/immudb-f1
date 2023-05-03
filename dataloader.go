@@ -240,8 +240,9 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 		log.Fatalln(err)
 	}
 	column_string := strings.Join(columns, ",")
-
-	tx, err := client.NewTx(ctx)
+	
+	// tx, err := client.NewTx(ctx)
+	tx, err := client.NewTx(ctx, immudb.UnsafeMVCC(), immudb.SnapshotMustIncludeTxID(0), immudb.SnapshotRenewalPeriod(0))
 	if err != nil {
 		log.Fatalf("Load Table %s. Error while creating transaction: %s", name, err)
 	}
