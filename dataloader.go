@@ -55,15 +55,15 @@ func parseConfig() (c cfg) {
 
 func connect(config cfg) (immudb.ImmuClient, context.Context) {
 	ctx := context.Background()
-        opts := immudb.DefaultOptions().WithAddress(config.IpAddr).WithPort(config.Port)
+	opts := immudb.DefaultOptions().WithAddress(config.IpAddr).WithPort(config.Port)
 
 	var client immudb.ImmuClient
 	var err error
 
 	client, err = immudb.NewImmuClient(opts)
 	if err != nil {
-                log.Printf("Failed to connect. Reason: %s", err.Error())
-                return client,ctx
+		log.Printf("Failed to connect. Reason: %s", err.Error())
+		return client, ctx
 	}
 	err = client.OpenSession(ctx, []byte(config.Username), []byte(config.Password), config.DBName)
 	if err != nil {
@@ -76,101 +76,156 @@ const (
 	isString = iota
 	isInt
 	isTimestamp
+	isFloat
+	isDuration
 )
 
 type t_metadata struct {
-	create string
-	cast map[int]int // position of field to cast to integers
+	create []string
+	cast   map[int]int // position of field to cast to integers
 }
 
 var metadata = map[string]t_metadata{
 	"circuits": t_metadata{
-		create: "CREATE TABLE circuits(circuitId INTEGER, circuitRef VARCHAR, name VARCHAR, location VARCHAR, country VARCHAR, lat INTEGER, lng INTEGER ,alt INTEGER ,url VARCHAR, PRIMARY KEY circuitId);",
-		cast: map[int]int{0:isInt, 5:isInt, 6:isInt, 7:isInt},
+		create: []string{
+			"CREATE TABLE circuits(circuitId INTEGER, circuitRef VARCHAR, name VARCHAR, location VARCHAR, country VARCHAR, lat FLOAT, lng FLOAT, alt INTEGER, url VARCHAR, PRIMARY KEY circuitId);",
+		},
+		cast: map[int]int{0: isInt, 5: isFloat, 6: isFloat, 7: isInt},
 	},
 	"constructors": t_metadata{
-		create: "CREATE TABLE constructors(constructorId INTEGER, constructorRef VARCHAR, name VARCHAR,nationality VARCHAR,url VARCHAR, PRIMARY KEY constructorId);",
-		cast: map[int]int{0:isInt},
+		create: []string{
+			"CREATE TABLE constructors(constructorId INTEGER, constructorRef VARCHAR, name VARCHAR,nationality VARCHAR,url VARCHAR, PRIMARY KEY constructorId);",
+		},
+		cast: map[int]int{0: isInt},
 	},
 	"constructorResults": t_metadata{
-		create: "CREATE TABLE constructorResults(constructorResultsId INTEGER, raceId INTEGER, constructorId INTEGER, points INTEGER, status INTEGER, PRIMARY KEY constructorResultsId)",
-		cast: map[int]int{0:isInt, 1:isInt, 2:isInt, 3:isInt, 4:isInt},
+		create: []string{
+			"CREATE TABLE constructorResults(constructorResultsId INTEGER, raceId INTEGER, constructorId INTEGER, points FLOAT, status VARCHAR, PRIMARY KEY constructorResultsId)",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isFloat},
 	},
 	"constructorStandings": t_metadata{
-		create: "CREATE TABLE constructorStandings(constructorStandingsId INTEGER, raceId INTEGER, constructorId INTEGER, points INTEGER, position INTEGER, positionText INTEGER,wins INTEGER, PRIMARY KEY constructorStandingsId)",
-		cast: map[int]int{0:isInt, 1:isInt, 2:isInt, 3:isInt, 4:isInt, 5:isInt, 6:isInt},
+		create: []string{
+			"CREATE TABLE constructorStandings(constructorStandingsId INTEGER, raceId INTEGER, constructorId INTEGER, points FLOAT, position INTEGER, positionText VARCHAR, wins INTEGER, PRIMARY KEY constructorStandingsId)",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isFloat, 4: isInt, 6: isInt},
 	},
-	"drivers":  t_metadata{
-		create: "CREATE TABLE drivers(driverId INTEGER, driverRef VARCHAR,number INTEGER, code VARCHAR[3], forename 	VARCHAR, surname VARCHAR, dob VARCHAR ,nationality VARCHAR, url VARCHAR, PRIMARY KEY driverId);",
-		cast: map[int]int{0:isInt, 2:isInt},
+	"drivers": t_metadata{
+		create: []string{
+			"CREATE TABLE drivers(driverId INTEGER, driverRef VARCHAR,number INTEGER, code VARCHAR[3], forename 	VARCHAR, surname VARCHAR, dob VARCHAR ,nationality VARCHAR, url VARCHAR, PRIMARY KEY driverId);",
+		},
+		cast: map[int]int{0: isInt, 2: isInt},
 	},
 	"driverStandings": t_metadata{
-		create: "CREATE TABLE driverStandings(driverStandingsId INTEGER, raceId INTEGER, driverId INTEGER, points INTEGER, position INTEGER, positionText INTEGER,wins INTEGER, PRIMARY KEY driverStandingsId)",
-		cast: map[int]int{0:isInt, 1:isInt, 2:isInt, 3:isInt, 4:isInt, 5:isInt, 6:isInt},
+		create: []string{
+			"CREATE TABLE driverStandings(driverStandingsId INTEGER, raceId INTEGER, driverId INTEGER, points FLOAT, position INTEGER, positionText VARCHAR, wins INTEGER, PRIMARY KEY driverStandingsId)",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isFloat, 4: isInt, 6: isInt},
 	},
 	"lapTimes": t_metadata{
-		create: "CREATE TABLE lapTimes(raceId INTEGER, driverId INTEGER, lap INTEGER, position INTEGER, time VARCHAR, milliseconds INTEGER, PRIMARY KEY (raceId, driverId, lap))",
-		cast: map[int]int{0:isInt, 1:isInt, 2:isInt, 3:isInt, 5:isInt},
+		create: []string{
+			"CREATE TABLE lapTimes(raceId INTEGER, driverId INTEGER, lap INTEGER, position INTEGER, time FLOAT, milliseconds INTEGER, PRIMARY KEY (raceId, driverId, lap))",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isInt, 4: isDuration, 5: isInt},
 	},
-	"races":  t_metadata{
-		create: "CREATE TABLE races(raceId INTEGER, year INTEGER, round INTEGER, circuitId INTEGER, name VARCHAR, datetime TIMESTAMP, url VARCHAR, PRIMARY KEY raceId)",
-		cast: map[int]int{0:isInt, 1:isInt, 2:isInt, 3:isInt, 5:isTimestamp},
+	"pitStops": t_metadata{
+		create: []string{
+			"CREATE TABLE pitStops(raceId INTEGER, driverId INTEGER, stop INTEGER, lap INTEGER, time VARCHAR, duration FLOAT, milliseconds INTEGER, PRIMARY KEY (raceId, driverId, stop))",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isInt, 5: isDuration, 6: isInt},
+	},
+	"qualifying": t_metadata{
+		create: []string{
+			"CREATE TABLE qualifying(qualifyId INTEGER, raceId INTEGER, driverId INTEGER, constructorId INTEGER, number INTEGER, position INTEGER, q1 VARCHAR, q2 VARCHAR, q3 VARCHAR, PRIMARY KEY qualifyId)",
+			"CREATE INDEX ON qualifying(constructorId)",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isInt, 4: isInt, 5: isInt},
+	},
+	"races": t_metadata{
+		create: []string{
+			"CREATE TABLE races(raceId INTEGER, year INTEGER, round INTEGER, circuitId INTEGER, name VARCHAR, datetime TIMESTAMP, url VARCHAR, PRIMARY KEY raceId)",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isInt, 5: isTimestamp},
 	},
 	"results": t_metadata{
-		create: "CREATE TABLE results(resultId INTEGER, raceId INTEGER, driverId INTEGER, constructorId INTEGER, number INTEGER, grid INTEGER, position INTEGER, positionText VARCHAR, positionOrder INTEGER, points INTEGER, laps INTEGER ,time VARCHAR, milliseconds INTEGER,fastestLap INTEGER, rank INTEGER, fastestLapTime VARCHAR, fastestLapSpeed INTEGER ,statusId INTEGER, PRIMARY KEY resultId)",
-		cast: map[int]int{0:isInt, 1:isInt, 2:isInt, 3:isInt, 4:isInt, 5:isInt, 6:isInt,
-			8:isInt, 9:isInt, 10:isInt, 12:isInt, 13:isInt, 14:isInt, 16:isInt, 17:isInt},
+		create: []string{
+			"CREATE TABLE results(resultId INTEGER, raceId INTEGER, driverId INTEGER, constructorId INTEGER, number INTEGER, grid INTEGER, position INTEGER, positionText VARCHAR, positionOrder INTEGER, points FLOAT, laps INTEGER ,time VARCHAR, milliseconds INTEGER,fastestLap INTEGER, rank INTEGER, fastestLapTime VARCHAR, fastestLapSpeed FLOAT ,statusId INTEGER, PRIMARY KEY resultId)",
+		},
+		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isInt, 4: isInt, 5: isInt, 6: isInt,
+			8: isInt, 9: isFloat, 10: isInt, 12: isInt, 13: isInt, 14: isInt, 16: isFloat, 17: isInt},
 	},
 	"seasons": t_metadata{
-		create: "CREATE TABLE seasons(year INTEGER, url VARCHAR, PRIMARY KEY year)",
-		cast: map[int]int{0:isInt},
+		create: []string{
+			"CREATE TABLE seasons(year INTEGER, url VARCHAR, PRIMARY KEY year)",
+		},
+		cast: map[int]int{0: isInt},
 	},
 	"status": t_metadata{
-		create: "CREATE TABLE status(statusId INTEGER, status VARCHAR, PRIMARY KEY statusId)",
-		cast: map[int]int{0:isInt},
+		create: []string{
+			"CREATE TABLE status(statusId INTEGER, status VARCHAR, PRIMARY KEY statusId)",
+		},
+		cast: map[int]int{0: isInt},
 	},
 }
 
-
 func str_clean(s string) string {
-	s1 := strings.ToValidUTF8(s,string([]rune{unicode.ReplacementChar}))
+	s1 := strings.ToValidUTF8(s, string([]rune{unicode.ReplacementChar}))
 	s2 := strings.ReplaceAll(s1, "%", "%%")
-	s3 := strings.ReplaceAll(s2, "'", ".")
+	//	s3 := strings.ReplaceAll(s2, "'", "''") // escape single quote by doubling them
+	s3 := strings.ReplaceAll(s2, "'", "?") // escape single quote by doubling them
 	return s3
 }
 
 func valstring(name string, record []string) string {
 	var t []string
-	mdata:=metadata[name]
-	for i,field := range record {
+	mdata := metadata[name]
+	for i, field := range record {
 		castType, ok := mdata.cast[i]
 		if !ok {
-			castType=isString
+			castType = isString
 		}
 		switch castType {
-			case isString:
-				t = append(t, fmt.Sprintf("'%s'",str_clean(field)))
-			case isInt:
+		case isString:
+			t = append(t, fmt.Sprintf("'%s'", str_clean(field)))
+		case isInt:
 			ii := 0.0
 			if field == "NULL" {
-				t=append(t, "NULL")
+				t = append(t, "NULL")
 				break
 			}
 			if field != "" {
 				var err error
 				ii, err = strconv.ParseFloat(field, 64)
 				if err != nil {
-					log.Printf("FIELDS: %v",record)
+					log.Printf("FIELDS: %v", record)
 					log.Printf("Unable to convert field %s [%d]: %s", field, i, err.Error())
 					ii = -1.0
 				}
 			}
 			t = append(t, strconv.Itoa(int(ii)))
-			case isTimestamp:
-				t = append(t, fmt.Sprintf("CAST('%s' AS TIMESTAMP)",field))
+		case isFloat:
+			ii := 0.0
+			if field == "NULL" {
+				t = append(t, "NULL")
+				break
+			}
+			if field != "" {
+				var err error
+				ii, err = strconv.ParseFloat(field, 64)
+				if err != nil {
+					log.Printf("FIELDS: %v", record)
+					log.Printf("Unable to convert field %s [%d]: %s", field, i, err.Error())
+					ii = -1.0
+				}
+			}
+			t = append(t, fmt.Sprintf("%f", ii))
+		case isTimestamp:
+			t = append(t, fmt.Sprintf("CAST('%s' AS TIMESTAMP)", field))
+		case isDuration:
+			t = append(t, fmt.Sprintf("%f", strToDuration(str_clean(field))))
 		}
 	}
-	return strings.Join(t,",")
+	return strings.Join(t, ",")
 }
 func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 	filename := fmt.Sprintf("CSV/%s.csv", name)
@@ -190,19 +245,20 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 	if err != nil {
 		log.Fatalf("Load Table %s. Error while creating transaction: %s", name, err)
 	}
-	err = tx.SQLExec(ctx, metadata[name].create, nil)
-	if err != nil {
-		log.Fatalf("Load Table %s. Error while creating table: %s", name, err)
+	for _, q := range metadata[name].create {
+		err = tx.SQLExec(ctx, q, nil)
+		if err != nil {
+			log.Fatalf("Load Table %s. Error in query %s while creating table: %s", q, name, err)
+		}
+	}
+	tx_count := 1 // the create table is a valid instruction
+
+	if name == "results" {
+		tx.SQLExec(ctx, "CREATE INDEX ON results(driverId);CREATE INDEX ON results(statusId);", nil)
+		tx_count++
 	}
 
-	tx_count :=1 // the create table is a valid instruction
-
-        if name == "results" {
-	   tx.SQLExec(ctx, "CREATE INDEX ON results(driverId);CREATE INDEX ON results(statusId);", nil)
-           tx_count++
-        }
-
-        for {
+	for {
 		record, err := r.Read()
 		if err == io.EOF {
 			break
@@ -212,14 +268,14 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 		}
 		value_string := valstring(name, record)
 		qstring := fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", name, column_string, value_string)
-		log.Printf(qstring)
+		//log.Printf(qstring)
 		err = tx.SQLExec(ctx, qstring, nil)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		
-		tx_count = tx_count+1
-		if tx_count>256 {
+
+		tx_count = tx_count + 1
+		if tx_count > 256 {
 			_, err = tx.Commit(ctx)
 			if err != nil {
 				log.Fatalln(err)
@@ -228,12 +284,12 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 			if err != nil {
 				log.Fatalln(err)
 			}
-			tx_count=0
+			tx_count = 0
 		}
 
 	}
-	
-	if tx_count!=0 {
+
+	if tx_count != 0 {
 		_, err = tx.Commit(ctx)
 		if err != nil {
 			log.Fatalln(err)
@@ -241,25 +297,28 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 	}
 }
 
-var tabs=[]string{
+var tabs = []string{
 	"circuits",
 	"constructors",
 	"constructorResults",
 	"constructorStandings",
 	"driverStandings",
 	"lapTimes",
+	"pitStops",
+	"qualifying",
 	"drivers",
 	"races",
 	"results",
 	"seasons",
 	"status",
 }
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	c := parseConfig()
 	ic, ctx := connect(c)
-	for _,t := range tabs {
+	for _, t := range tabs {
 		load_table(ic, ctx, t)
 	}
-	
+
 }
