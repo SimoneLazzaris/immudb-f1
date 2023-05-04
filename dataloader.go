@@ -23,12 +23,8 @@ import (
 	"io"
 	"log"
 	"os"
-	"strconv"
 	"strings"
-	"unicode"
 	// 	"math/rand"
-	// 	"sync"
-	// 	"time"
 
 	// 	"github.com/codenotary/immudb/pkg/api/schema"
 	immudb "github.com/codenotary/immudb/pkg/client"
@@ -41,6 +37,10 @@ type cfg struct {
 	Username string
 	Password string
 	DBName   string
+	Parallel bool
+	Debug    bool
+	TxSize   int
+	SeqInit  bool
 }
 
 func parseConfig() (c cfg) {
@@ -49,23 +49,24 @@ func parseConfig() (c cfg) {
 	flag.StringVar(&c.Username, "user", "immudb", "Username for authenticating to immudb")
 	flag.StringVar(&c.Password, "pass", "immudb", "Password for authenticating to immudb")
 	flag.StringVar(&c.DBName, "db", "defaultdb", "Name of the database to use")
+	flag.BoolVar(&c.Parallel, "parallel", false, "Load tables in parallel (multiple workers)")
+	flag.BoolVar(&c.Debug, "debug", false, "log level: debug")
+	flag.IntVar(&c.TxSize, "txsize", 256, "Transaction size")
+	flag.BoolVar(&c.SeqInit, "seq-init", false, "Sequential table initialization")
 	flag.Parse()
 	return
 }
 
 func connect(config cfg) (immudb.ImmuClient, context.Context) {
+	log.Print("Connecting")
 	ctx := context.Background()
 	opts := immudb.DefaultOptions().WithAddress(config.IpAddr).WithPort(config.Port)
 
 	var client immudb.ImmuClient
-	var err error
 
-	client, err = immudb.NewImmuClient(opts)
-	if err != nil {
-		log.Printf("Failed to connect. Reason: %s", err.Error())
-		return client, ctx
-	}
-	err = client.OpenSession(ctx, []byte(config.Username), []byte(config.Password), config.DBName)
+	client = immudb.NewClient().WithOptions(opts)
+
+	err := client.OpenSession(ctx, []byte(config.Username), []byte(config.Password), config.DBName)
 	if err != nil {
 		log.Fatalln("Failed to connect. Reason:", err)
 	}
@@ -150,6 +151,8 @@ var metadata = map[string]t_metadata{
 	"results": t_metadata{
 		create: []string{
 			"CREATE TABLE results(resultId INTEGER, raceId INTEGER, driverId INTEGER, constructorId INTEGER, number INTEGER, grid INTEGER, position INTEGER, positionText VARCHAR, positionOrder INTEGER, points FLOAT, laps INTEGER ,time VARCHAR, milliseconds INTEGER,fastestLap INTEGER, rank INTEGER, fastestLapTime VARCHAR, fastestLapSpeed FLOAT ,statusId INTEGER, PRIMARY KEY resultId)",
+			"CREATE INDEX ON results(driverId)",
+			"CREATE INDEX ON results(statusId)",
 		},
 		cast: map[int]int{0: isInt, 1: isInt, 2: isInt, 3: isInt, 4: isInt, 5: isInt, 6: isInt,
 			8: isInt, 9: isFloat, 10: isInt, 12: isInt, 13: isInt, 14: isInt, 16: isFloat, 17: isInt},
@@ -168,66 +171,8 @@ var metadata = map[string]t_metadata{
 	},
 }
 
-func str_clean(s string) string {
-	s1 := strings.ToValidUTF8(s, string([]rune{unicode.ReplacementChar}))
-	s2 := strings.ReplaceAll(s1, "%", "%%")
-	//	s3 := strings.ReplaceAll(s2, "'", "''") // escape single quote by doubling them
-	s3 := strings.ReplaceAll(s2, "'", "?") // escape single quote by doubling them
-	return s3
-}
-
-func valstring(name string, record []string) string {
-	var t []string
-	mdata := metadata[name]
-	for i, field := range record {
-		castType, ok := mdata.cast[i]
-		if !ok {
-			castType = isString
-		}
-		switch castType {
-		case isString:
-			t = append(t, fmt.Sprintf("'%s'", str_clean(field)))
-		case isInt:
-			ii := 0.0
-			if field == "NULL" {
-				t = append(t, "NULL")
-				break
-			}
-			if field != "" {
-				var err error
-				ii, err = strconv.ParseFloat(field, 64)
-				if err != nil {
-					log.Printf("FIELDS: %v", record)
-					log.Printf("Unable to convert field %s [%d]: %s", field, i, err.Error())
-					ii = -1.0
-				}
-			}
-			t = append(t, strconv.Itoa(int(ii)))
-		case isFloat:
-			ii := 0.0
-			if field == "NULL" {
-				t = append(t, "NULL")
-				break
-			}
-			if field != "" {
-				var err error
-				ii, err = strconv.ParseFloat(field, 64)
-				if err != nil {
-					log.Printf("FIELDS: %v", record)
-					log.Printf("Unable to convert field %s [%d]: %s", field, i, err.Error())
-					ii = -1.0
-				}
-			}
-			t = append(t, fmt.Sprintf("%f", ii))
-		case isTimestamp:
-			t = append(t, fmt.Sprintf("CAST('%s' AS TIMESTAMP)", field))
-		case isDuration:
-			t = append(t, fmt.Sprintf("%f", strToDuration(str_clean(field))))
-		}
-	}
-	return strings.Join(t, ",")
-}
-func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
+func load_table(client immudb.ImmuClient, ctx context.Context, name string, txsize int, create_table bool) {
+	log.Printf("Loading table %s", name)
 	filename := fmt.Sprintf("CSV/%s.csv", name)
 	f, err := os.Open(filename)
 	if err != nil {
@@ -240,25 +185,13 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 		log.Fatalln(err)
 	}
 	column_string := strings.Join(columns, ",")
-	
-	tx, err := client.NewTx(ctx)
-	// tx, err := client.NewTx(ctx, immudb.UnsafeMVCC(), immudb.SnapshotMustIncludeTxID(0), immudb.SnapshotRenewalPeriod(0))
-	if err != nil {
-		log.Fatalf("Load Table %s. Error while creating transaction: %s", name, err)
-	}
-	for _, q := range metadata[name].create {
-		err = tx.SQLExec(ctx, q, nil)
-		if err != nil {
-			log.Fatalf("Load Table %s. Error in query %s while creating table: %s", q, name, err)
+	tx := MakeTx(ctx, client, name, txsize)
+	if create_table {
+		for _, q := range metadata[name].create {
+			tx.Add(q)
 		}
+		tx.Commit()
 	}
-	tx_count := 1 // the create table is a valid instruction
-
-	if name == "results" {
-		tx.SQLExec(ctx, "CREATE INDEX ON results(driverId);CREATE INDEX ON results(statusId);", nil)
-		tx_count++
-	}
-
 	for {
 		record, err := r.Read()
 		if err == io.EOF {
@@ -269,33 +202,13 @@ func load_table(client immudb.ImmuClient, ctx context.Context, name string) {
 		}
 		value_string := valstring(name, record)
 		qstring := fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", name, column_string, value_string)
-		//log.Printf(qstring)
-		err = tx.SQLExec(ctx, qstring, nil)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		tx_count = tx_count + 1
-		if tx_count > 256 {
-			_, err = tx.Commit(ctx)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			tx, err = client.NewTx(ctx)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			tx_count = 0
-		}
+		debug.Printf(qstring)
+		tx.Add(qstring)
 
 	}
 
-	if tx_count != 0 {
-		_, err = tx.Commit(ctx)
-		if err != nil {
-			log.Fatalln(err)
-		}
-	}
+	tx.Commit()
+	log.Printf("Loaded table %s", name)
 }
 
 var tabs = []string{
@@ -313,13 +226,53 @@ var tabs = []string{
 	"seasons",
 	"status",
 }
+var debug *log.Logger
+
+func createAllTables(c cfg) {
+	client, ctx := connect(c)
+	tx := MakeTx(ctx, client, "init", 100)
+	for _, meta := range metadata {
+		for _, q := range meta.create {
+			tx.Add(q)
+		}
+	}
+	tx.Commit()
+	client.CloseSession(ctx)
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	c := parseConfig()
-	ic, ctx := connect(c)
-	for _, t := range tabs {
-		load_table(ic, ctx, t)
+	if !c.Debug {
+		debug = log.New(io.Discard, "DEBUG", 0)
+	} else {
+		debug = log.New(os.Stderr, "DEBUG", log.LstdFlags|log.Lshortfile)
 	}
 
+	if c.Parallel {
+		log.Print("Parallel insertion")
+		end := make(chan bool)
+		if c.SeqInit {
+			createAllTables(c)
+		}
+		for _, t := range tabs {
+			go func(tname string, endchannel chan bool) {
+				ic, ctx := connect(c)
+				load_table(ic, ctx, tname, c.TxSize, !c.SeqInit)
+				endchannel <- true
+				ic.CloseSession(ctx)
+			}(t, end)
+		}
+		for i := 0; i < len(tabs); i++ {
+			<- end
+		}
+	} else {
+		log.Print("Sequential insertion")
+		ic, ctx := connect(c)
+		for _, t := range tabs {
+			load_table(ic, ctx, t, c.TxSize, true)
+			ic.CloseSession(ctx)
+		}
+	}
+	log.Printf("Found %d collisions", collisions)
 }
