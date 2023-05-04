@@ -24,11 +24,8 @@ import (
 	"log"
 	"os"
 	"strings"
-	// 	"math/rand"
 
-	// 	"github.com/codenotary/immudb/pkg/api/schema"
 	immudb "github.com/codenotary/immudb/pkg/client"
-	// 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type cfg struct {

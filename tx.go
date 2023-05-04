@@ -64,8 +64,8 @@ func (t *t_tx) Commit() {
 	}
 	var err error
 	for i := 0; i < 5; i++ {
-		// t.tx, err = t.ic.NewTx(t.ctx)
-		t.tx, err = t.ic.NewTx(t.ctx, immudb.UnsafeMVCC(), immudb.SnapshotMustIncludeTxID(0), immudb.SnapshotRenewalPeriod(0))
+		t.tx, err = t.ic.NewTx(t.ctx)
+		// t.tx, err = t.ic.NewTx(t.ctx, immudb.UnsafeMVCC(), immudb.SnapshotMustIncludeTxID(0), immudb.SnapshotRenewalPeriod(0))
 		if err != nil {
 			log.Fatalf("Load Table %s. Error while creating transaction: %s", t.name, err)
 		}
